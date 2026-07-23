@@ -218,4 +218,5 @@ if __name__ == "__main__":
     print()
     print(f"Test-set calibration at startup: {COVERAGE}")
     print(f"Serving on http://localhost:{port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    if __name__ == "__main__":
+        app.run(host="0.0.0.0", port=5000)
