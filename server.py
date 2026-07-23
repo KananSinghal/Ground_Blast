@@ -213,7 +213,9 @@ def invert():
 
 
 if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5550))
     print()
     print(f"Test-set calibration at startup: {COVERAGE}")
-    print("Serving on http://localhost:5550")
-    app.run(host="0.0.0.0", port=5550, debug=False)
+    print(f"Serving on http://localhost:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
