@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+· GITIGNORE
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+ 
+# Jupyter
+.ipynb_checkpoints/
+ 
+# Virtual environments
+venv/
+env/
+.venv/
+ 
+# Generated output
+output_plots/
+ 
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+ 
+# Local env vars, if you ever add any
+.env
+ 
