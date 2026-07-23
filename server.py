@@ -31,10 +31,10 @@ app = Flask(__name__, static_folder=".", static_url_path="")
 # Startup: phases 1-2 from main.py, run once and cached in memory.
 
 print("Generating dataset and fitting GP once at startup, this takes a few seconds...")
-DATA = generate_dataset(n_points=1000, seed=SEED)
+DATA = generate_dataset(n_points=200, seed=SEED)
 
 GP = HeteroscedasticGP()
-GP.fit(DATA["x_train"], DATA["y_train"], DATA["sigma_train"], n_restarts=5)
+GP.fit(DATA["x_train"], DATA["y_train"], DATA["sigma_train"], n_restarts=1)
 
 MEAN_TEST, SIGMA_TEST = GP.predict(DATA["x_test"], DATA["sigma_test"])
 COVERAGE = check_coverage(MEAN_TEST, SIGMA_TEST, DATA["y_test"])
