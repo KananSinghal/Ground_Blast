@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.git
+.gitignore
+output_plots/
+venv/
+.venv/
+*.egg-info/
+.DS_Store

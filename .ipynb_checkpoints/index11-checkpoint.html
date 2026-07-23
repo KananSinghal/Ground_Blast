@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ground Shock | GP & Inversion</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js for advanced 2D & 3D visualizations -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f1115;
+            color: #e2e8f0;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1d24; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        
+        .glass-panel {
+            background: rgba(30, 34, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+        }
+        
+        input[type=range] {
+            accent-color: #1a6faf;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-6 flex flex-col gap-6">
+
+    <!-- Header -->
+    <header class="glass-panel p-6 flex justify-between items-center shadow-lg">
+        <div>
+            <h1 class="text-3xl font-bold text-white tracking-tight">Ground Shock Prediction</h1>
+            <p class="text-gray-400 mt-1 text-sm">Heteroscedastic Gaussian Process & Parameter Inversion</p>
+        </div>
+        <div class="text-right flex flex-col items-end">
+            <span class="px-3 py-1 bg-green-900/30 text-green-400 border border-green-800 rounded-full text-xs font-mono font-bold tracking-wide">SYSTEM ONLINE</span>
+            <span class="text-xs text-gray-500 mt-2 font-mono" id="status-text">Awaiting API connection...</span>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        <!-- Left Column: 2D & 3D GP Visualizations -->
+        <div class="xl:col-span-2 flex flex-col gap-6">
+            
+            <!-- 2D Calibration Fit -->
+            <div class="glass-panel p-1 flex flex-col h-[500px]">
+                <div class="px-5 pt-4 pb-0 flex justify-between items-center">
+                    <h2 class="text-lg font-semibold text-white">Heteroscedastic GP Fit (Week 1)</h2>
+                    <span class="text-xs text-gray-400 font-mono">Z vs V (Log-Log)</span>
+                </div>
+                <div id="plot-2d" class="flex-grow w-full"></div>
+            </div>
+
+            <!-- 3D Probability Surface -->
+            <div class="glass-panel p-1 flex flex-col h-[600px] relative">
+                <div class="px-5 pt-4 pb-0 z-10 absolute top-0 left-0 w-full pointer-events-none flex justify-between items-center">
+                    <h2 class="text-lg font-semibold text-white pointer-events-auto">3D Confidence Manifold</h2>
+                    <span class="text-xs text-gray-400 font-mono pointer-events-auto">Live Trace Point Enabled</span>
+                </div>
+                <div id="plot-3d" class="w-full h-full"></div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Interactive Tools -->
+        <div class="flex flex-col gap-6">
+            
+            <!-- Live Prediction Tool -->
+            <div class="glass-panel p-5 flex flex-col gap-4">
+                <h2 class="text-lg font-semibold text-white border-b border-gray-700 pb-2">Live Forward Prediction</h2>
+                <p class="text-xs text-gray-400 mb-2">Drag the slider to query the GP model for a specific scaled distance (<span class="font-mono">Z</span>). The 3D manifold will update live.</p>
+                
+                <div class="flex items-center gap-4">
+                    <input type="range" id="z-slider" min="1" max="100" step="0.5" value="10" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    <span class="font-mono bg-gray-800 px-3 py-1 rounded text-sm text-[#1a6faf] font-bold w-20 text-center" id="z-display">10.0</span>
+                </div>
+
+                <div class="mt-4 grid grid-cols-2 gap-4">
+                    <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 text-center">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GP Mean Velocity</div>
+                        <div class="text-2xl font-bold text-white font-mono" id="pred-mean">--</div>
+                        <div class="text-[10px] text-gray-500 mt-1">in/sec</div>
+                    </div>
+                    <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 text-center">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">True UFC (Eq. 2-85)</div>
+                        <div class="text-2xl font-bold text-gray-400 font-mono" id="pred-true">--</div>
+                        <div class="text-[10px] text-gray-500 mt-1">in/sec</div>
+                    </div>
+                </div>
+
+                <div class="mt-2 text-xs font-mono">
+                    <div class="flex justify-between py-1 border-b border-gray-700/50">
+                        <span class="text-gray-400">95% Interval:</span>
+                        <span id="interval-95" class="text-gray-300">--</span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-gray-700/50">
+                        <span class="text-gray-400">90% Interval:</span>
+                        <span id="interval-90" class="text-gray-300">--</span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-gray-700/50">
+                        <span class="text-gray-400">80% Interval:</span>
+                        <span id="interval-80" class="text-gray-300">--</span>
+                    </div>
+                    <div class="flex justify-between py-1">
+                        <span class="text-gray-400">50% Interval:</span>
+                        <span id="interval-50" class="text-gray-300">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inversion Tool (Week 2) -->
+            <div class="glass-panel p-5 flex flex-col gap-4 flex-grow">
+                <h2 class="text-lg font-semibold text-white border-b border-gray-700 pb-2">Inverse Parameter Recovery</h2>
+                <p class="text-xs text-gray-400 mb-2">Simulate field data and use Adam gradient descent to recover true <span class="font-mono text-orange-400">n</span> and <span class="font-mono text-orange-400">k</span> values (Week 2).</p>
+                
+                <div class="flex gap-2 items-end">
+                    <div class="flex-grow">
+                        <label class="block text-xs text-gray-500 mb-1">Random Seed (Simulated Field Data)</label>
+                        <input type="number" id="inversion-seed" value="99" class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-[#e67e22]">
+                    </div>
+                    <button id="btn-invert" class="bg-[#e67e22] hover:bg-[#d35400] text-white px-4 py-2 rounded font-semibold text-sm transition-colors duration-200 shadow-lg">
+                        Run Inversion
+                    </button>
+                </div>
+
+                <!-- Inversion Results -->
+                <div class="grid grid-cols-2 gap-2 mt-2 hidden" id="inversion-results-box">
+                    <div class="bg-gray-800/50 p-3 rounded border border-gray-700 text-center">
+                        <div class="text-[10px] text-gray-500 uppercase">Recovered N</div>
+                        <div class="text-lg font-bold text-orange-400 font-mono" id="inv-n">--</div>
+                    </div>
+                    <div class="bg-gray-800/50 p-3 rounded border border-gray-700 text-center">
+                        <div class="text-[10px] text-gray-500 uppercase">Recovered K</div>
+                        <div class="text-lg font-bold text-orange-400 font-mono" id="inv-k">--</div>
+                    </div>
+                </div>
+
+                <!-- Inversion Charts -->
+                <div class="w-full h-40 mt-2" id="plot-inversion-curve"></div>
+            </div>
+
+            <!-- Calibration Coverage Table -->
+            <div class="glass-panel p-5 flex flex-col gap-2">
+                <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Test Set Calibration Report</h2>
+                <div id="calibration-table" class="flex flex-col gap-1 text-xs font-mono">
+                    <!-- Populated via JS -->
+                    <div class="text-gray-500 italic">Fetching calibration metrics...</div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Frontend Logic -->
+    <script>
+        // Design constants matched from plots.py
+        const C = {
+            black: "#000000",
+            grey: "#888888",
+            blue: "#1a6faf",
+            blue_light: "#1a6faf55", // added alpha for bands
+            blue_lighter: "#1a6faf33",
+            red: "#c0392b",
+            orange: "#e67e22",
+            green: "#27ae60",
+            bg: "#1e222a",
+            grid: "#2a303c",
+            text: "#e2e8f0"
+        };
+
+        const layoutBase = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: 'Inter, sans-serif', color: C.text },
+            margin: { t: 40, r: 20, b: 40, l: 50 }
+        };
+
+        // Global State
+        let globalZGrid = [];
+        let globalMeanGrid = [];
+        let globalBands = {};
+
+        // 1. Initialize Dashboard
+        async function initDashboard() {
+            document.getElementById('status-text').innerText = "Fetching baseline model data...";
+            try {
+                const response = await fetch('/api/calibration-curve');
+                const data = await response.json();
+                
+                globalZGrid = data.z_grid;
+                globalMeanGrid = data.mean_grid;
+                globalBands = data.bands;
+
+                render2DPlot(data);
+                render3DPlot(data);
+                renderCalibrationTable(data.coverage);
+                
+                // Initialize prediction logic with debouncer
+                setupPredictor();
+                
+                document.getElementById('status-text').innerHTML = `<span class="text-green-400">Connected to local Python GP Kernel</span>`;
+            } catch (err) {
+                console.error(err);
+                document.getElementById('status-text').innerHTML = `<span class="text-red-400">Connection Failed (Is server.py running?)</span>`;
+            }
+        }
+
+        // 2. Render 2D GP Fit (matches gp_fit.png)
+        function render2DPlot(data) {
+            const traces = [];
+
+            // True UFC model
+            traces.push({
+                x: data.z_grid,
+                y: data.true_grid,
+                mode: 'lines',
+                line: { color: C.grey, width: 2, dash: 'dash' },
+                name: 'True UFC Curve',
+                hoverinfo: 'none'
+            });
+
+            // 90% Confidence Band (Lower & Upper)
+            traces.push({
+                x: data.z_grid, y: data.bands["0.9"].upper,
+                line: { width: 0 },
+                showlegend: false,
+                hoverinfo: 'none'
+            });
+            traces.push({
+                x: data.z_grid, y: data.bands["0.9"].lower,
+                fill: 'tonexty',
+                fillcolor: C.blue_lighter,
+                line: { width: 0 },
+                name: '90% Confidence Band',
+                hoverinfo: 'none'
+            });
+
+            // GP Mean
+            traces.push({
+                x: data.z_grid, y: data.mean_grid,
+                mode: 'lines',
+                line: { color: C.blue, width: 2 },
+                name: 'GP Mean Prediction'
+            });
+
+            // Raw Scatter (context)
+            traces.push({
+                x: data.scatter.z, y: data.scatter.v,
+                mode: 'markers',
+                marker: { color: '#4b5563', size: 4, opacity: 0.3 },
+                name: 'Synthetic Scatter',
+                showlegend: false
+            });
+
+            // Test Points (calibration)
+            traces.push({
+                x: data.test_points.z, y: data.test_points.v,
+                mode: 'markers',
+                marker: { color: C.red, size: 6, opacity: 0.8 },
+                name: 'Held-out Test Points'
+            });
+
+            const layout = {
+                ...layoutBase,
+                xaxis: { title: 'Scaled Distance Z (ft/lb^(1/3))', type: 'log', gridcolor: C.grid, zeroline: false },
+                yaxis: { title: 'Peak Velocity V (in/sec)', type: 'log', gridcolor: C.grid, zeroline: false },
+                legend: { x: 0.98, xanchor: 'right', y: 0.98, bgcolor: 'rgba(30,34,42,0.8)' },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('plot-2d', traces, layout, {responsive: true, displayModeBar: false});
+        }
+
+        // 3. Render 3D Confidence Manifold
+        function render3DPlot(data) {
+            // Y-axis represents the probability boundary slice [-95, -90, -80, -50, 0, 50, 80, 90, 95]
+            const yLevels = [-95, -90, -80, -50, 0, 50, 80, 90, 95];
+            
+            // Generate Z-matrix (Velocity) for the Surface mapping
+            const zMatrix = [];
+            
+            // Build the rows matching yLevels
+            zMatrix.push(data.bands["0.95"].lower);
+            zMatrix.push(data.bands["0.9"].lower);
+            zMatrix.push(data.bands["0.8"].lower);
+            zMatrix.push(data.bands["0.5"].lower);
+            zMatrix.push(data.mean_grid); // 0% variance (Mean)
+            zMatrix.push(data.bands["0.5"].upper);
+            zMatrix.push(data.bands["0.8"].upper);
+            zMatrix.push(data.bands["0.9"].upper);
+            zMatrix.push(data.bands["0.95"].upper);
+
+            // Log transform X and Z for proper visual scaling in 3D without breaking Plotly's surface mapping
+            const xLog = data.z_grid.map(v => Math.log10(v));
+            const zMatrixLog = zMatrix.map(row => row.map(v => Math.log10(v)));
+
+            const surface = {
+                x: xLog,
+                y: yLevels,
+                z: zMatrixLog,
+                type: 'surface',
+                colorscale: 'Blues',
+                showscale: false,
+                opacity: 0.85,
+                contours: {
+                    x: { show: true, color: 'rgba(255,255,255,0.1)' },
+                    y: { show: true, highlight: true, color: 'rgba(255,255,255,0.3)', width: 2 },
+                    z: { show: false }
+                },
+                hovertemplate: 'Log(Z): %{x:.2f}<br>Interval: %{y}%<br>Log(V): %{z:.2f}<extra></extra>'
+            };
+
+            // Live Marker (Initially hidden, updated by slider)
+            const liveMarker = {
+                x: [null], y: [null], z: [null],
+                mode: 'markers',
+                type: 'scatter3d',
+                marker: { color: C.red, size: 10, symbol: 'circle' },
+                name: 'Live Query Point',
+                showlegend: false
+            };
+
+            const layout = {
+                ...layoutBase,
+                margin: { t: 0, r: 0, b: 0, l: 0 },
+                scene: {
+                    xaxis: { title: 'Log10(Z)', gridcolor: C.grid, backgroundcolor: C.bg, showbackground: true },
+                    yaxis: { title: 'Probability Band (%)', gridcolor: C.grid, backgroundcolor: C.bg, showbackground: true, range: [-100, 100] },
+                    zaxis: { title: 'Log10(V)', gridcolor: C.grid, backgroundcolor: C.bg, showbackground: true },
+                    camera: { eye: {x: 1.5, y: -1.5, z: 0.8} }
+                }
+            };
+
+            Plotly.newPlot('plot-3d', [surface, liveMarker], layout, {responsive: true, displayModeBar: false});
+        }
+
+        // 4. Setup Calibration Table
+        function renderCalibrationTable(coverageData) {
+            const container = document.getElementById('calibration-table');
+            container.innerHTML = '';
+            
+            const levels = Object.keys(coverageData).sort((a,b) => parseFloat(a) - parseFloat(b));
+            
+            levels.forEach(level => {
+                const expected = parseFloat(level);
+                const observed = coverageData[level];
+                const passed = Math.abs(observed - expected) <= 0.05;
+                const badgeColor = passed ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400';
+                const badgeText = passed ? 'PASS' : 'FAIL';
+                
+                const html = `
+                    <div class="flex justify-between items-center py-1 border-b border-gray-700/50 last:border-0">
+                        <div class="flex items-center gap-3">
+                            <span class="${badgeColor} px-2 py-0.5 rounded font-bold text-[10px] w-10 text-center">${badgeText}</span>
+                            <span>Exp: ${(expected * 100).toFixed(0)}%</span>
+                        </div>
+                        <span class="text-gray-300">Obs: ${(observed * 100).toFixed(1)}%</span>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        // 5. Prediction Logic with Debounce
+        function setupPredictor() {
+            const slider = document.getElementById('z-slider');
+            const display = document.getElementById('z-display');
+            let timeout = null;
+
+            // Trigger prediction immediately on load
+            runPrediction(slider.value);
+
+            slider.addEventListener('input', (e) => {
+                const val = e.target.value;
+                display.innerText = parseFloat(val).toFixed(1);
+                
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    runPrediction(val);
+                }, 100); // 100ms debounce
+            });
+        }
+
+        async function runPrediction(zValue) {
+            try {
+                const res = await fetch(`/api/predict?z=${zValue}`);
+                const data = await res.json();
+                
+                if (data.error) throw new Error(data.error);
+
+                // Update UI text
+                document.getElementById('pred-mean').innerText = data.mean_velocity.toFixed(2);
+                document.getElementById('pred-true').innerText = data.true_ufc_velocity.toFixed(2);
+                
+                document.getElementById('interval-95').innerText = `${data.intervals["0.95"].lower.toFixed(2)} - ${data.intervals["0.95"].upper.toFixed(2)}`;
+                document.getElementById('interval-90').innerText = `${data.intervals["0.9"].lower.toFixed(2)} - ${data.intervals["0.9"].upper.toFixed(2)}`;
+                document.getElementById('interval-80').innerText = `${data.intervals["0.8"].lower.toFixed(2)} - ${data.intervals["0.8"].upper.toFixed(2)}`;
+                document.getElementById('interval-50').innerText = `${data.intervals["0.5"].lower.toFixed(2)} - ${data.intervals["0.5"].upper.toFixed(2)}`;
+
+                // Update Live 3D Plot Point
+                update3DMarker(parseFloat(zValue), data.mean_velocity);
+
+            } catch (err) {
+                console.error("Prediction Error:", err);
+            }
+        }
+
+        function update3DMarker(z, v) {
+            // Move the red dot to the current Z (log10), Y=0 (Mean), Z=Velocity (log10)
+            const plotDiv = document.getElementById('plot-3d');
+            if (plotDiv && plotDiv.data) {
+                Plotly.animate('plot-3d', {
+                    data: [{ x: [Math.log10(z)], y: [0], z: [Math.log10(v)] }],
+                    traces: [1], // The scatter3d trace index
+                    layout: {}
+                }, {
+                    transition: { duration: 150, easing: 'cubic-in-out' },
+                    frame: { duration: 150, redraw: false }
+                });
+            }
+        }
+
+        // 6. Inversion Logic (Week 2)
+        document.getElementById('btn-invert').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-invert');
+            const seed = document.getElementById('inversion-seed').value;
+            
+            btn.innerHTML = `<span class="animate-pulse">Inverting...</span>`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/invert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ seed: parseInt(seed) })
+                });
+                const data = await res.json();
+                
+                // Show results box
+                document.getElementById('inversion-results-box').classList.remove('hidden');
+                document.getElementById('inv-n').innerText = data.recovered_n.toFixed(3);
+                document.getElementById('inv-k').innerText = data.recovered_k.toFixed(1);
+
+                renderInversionPlot(data);
+
+            } catch(err) {
+                console.error("Inversion Error", err);
+            } finally {
+                btn.innerHTML = 'Run Inversion';
+                btn.disabled = false;
+            }
+        });
+
+        function renderInversionPlot(data) {
+            const traces = [];
+
+            // True Curve (if available)
+            if (data.true_curve) {
+                traces.push({
+                    x: data.dist_grid, y: data.true_curve,
+                    mode: 'lines', line: { color: C.grey, dash: 'dash', width: 2 },
+                    name: 'True Function'
+                });
+            }
+
+            // Recovered Curve
+            traces.push({
+                x: data.dist_grid, y: data.recovered_curve,
+                mode: 'lines', line: { color: C.orange, width: 2 },
+                name: 'Recovered Model'
+            });
+
+            // Field Scatter
+            traces.push({
+                x: data.field_points.z, y: data.field_points.v,
+                mode: 'markers', marker: { color: C.blue, size: 8 },
+                name: 'Simulated Measurements'
+            });
+
+            const layout = {
+                ...layoutBase,
+                margin: { t: 10, r: 10, b: 30, l: 40 },
+                xaxis: { type: 'log', gridcolor: C.grid, zeroline: false },
+                yaxis: { type: 'log', gridcolor: C.grid, zeroline: false },
+                legend: { x: 0.98, xanchor: 'right', y: 0.98, bgcolor: 'rgba(0,0,0,0.5)', font: {size: 10} },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('plot-inversion-curve', traces, layout, {responsive: true, displayModeBar: false});
+        }
+
+        // Init App
+        window.addEventListener('load', initDashboard);
+
+    </script>
+</body>
+</html>
